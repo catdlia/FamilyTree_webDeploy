@@ -43,17 +43,23 @@ def get_data_manager(username: str):
     """
     # 1. Шлях до папки конкретного користувача
     user_data_dir = os.path.join("family_tree_data", username)
-
+    
     ps = get_persistence_service()
-
-    # 2. Перевіряємо, чи є дані ЦЬОГО користувача локально
-    # Якщо папки немає - пробуємо відновити з хмари (бо ми могли видалити її локально)
-    if ps.is_enabled and not os.path.exists(user_data_dir):
-        # Якщо це локальний запуск і інтернет є, це відновить видалену папку
-        with st.spinner("🔄 Відновлення даних з хмари..."):
-            ps.download_latest_backup()
-
-    # 3. Ініціалізуємо DataManager
+    
+    # --- ВИПРАВЛЕННЯ ТУТ ---
+    # Перевіряємо саме папку КОРИСТУВАЧА. Якщо її немає - значить треба тягнути бекап.
+    # (Навіть якщо папка family_tree_data існує, але порожня)
+    need_restore = not os.path.exists(user_data_dir)
+    
+    if ps.is_enabled and need_restore:
+        with st.spinner("☁️ Завантаження даних з хмари..."):
+            print(f"User folder {user_data_dir} missing. Downloading backup...")
+            if ps.download_latest_backup():
+                st.toast("Дані успішно відновлено!", icon="✅")
+            else:
+                print("No backup found or download failed.")
+    
+    # 2. Ініціалізуємо DataManager
     dm = DataManager(username)
     dm.load_project()
     return dm
