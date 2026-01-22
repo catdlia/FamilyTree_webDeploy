@@ -201,20 +201,21 @@ def render_graph(dm: DataManager, selected_pid: str):
     # --- 5. ОБГОРТКА ДЛЯ СКРОЛУ ---
     # overflow: auto дозволить скролити, якщо картинка вилазить за межі 600px
     html_wrapper = f"""
-    <div style="
-        width: 100%; 
-        height: 600px; 
-        overflow: auto; 
-        border: 1px solid #444; 
-        border-radius: 5px; 
-        background-color: #0e1117; 
-        display: flex; 
-        justify-content: center;
-        align-items: flex-start;
-    ">
-        {svg_content}
-    </div>
-    """
+        <div style="
+            width: 100%; 
+            height: 600px; 
+            overflow: auto; 
+            border: 1px solid #444; 
+            border-radius: 5px; 
+            background-color: #0e1117; 
+            display: flex; 
+            justify-content: flex-start; /* БУЛО: center. СТАЛО: flex-start */
+            align-items: flex-start;
+            position: relative;
+        ">
+            {svg_content}
+        </div>
+        """
 
     # Використовуємо ТІЛЬКИ click_detector
     clicked_id_raw = click_detector(html_wrapper, key=click_key)
