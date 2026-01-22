@@ -41,25 +41,26 @@ class SVGRenderer:
     def generate_svg(self, zoom_level: float = 1.0) -> str:
         elements = []
 
-        # 1. Лінії зв'язків (Edges)
+        # 1. Лінії зв'язків
         elements.extend(self._draw_edges())
 
-        # 2. Вузли (Nodes)
+        # 2. Вузли
         elements.extend(self._draw_nodes())
 
         # 3. РОЗРАХУНОК МАСШТАБУ
-        # viewBox залишається незмінним (це наші логічні координати)
-        # А width/height ми множимо на zoom_level (це фізичні пікселі на екрані)
+        # viewBox залишається незмінним (логічні координати)
+        # А width/height множимо на zoom_level (фізичні пікселі)
 
         final_width = int(self.width * zoom_level)
         final_height = int(self.height * zoom_level)
 
         # Збираємо все в один SVG
-        # ВАЖЛИВО: Ми явно вказуємо width і height у пікселях
+        # ВАЖЛИВО: Додано style="min-width... min-height..." - це перемагає адаптивність Streamlit
         svg_content = f"""
         <svg viewBox="{self.min_x} {self.min_y} {self.width} {self.height}" 
              width="{final_width}px" 
-             height="{final_height}px" 
+             height="{final_height}px"
+             style="min-width: {final_width}px; min-height: {final_height}px;"
              preserveAspectRatio="xMidYMid meet"
              xmlns="http://www.w3.org/2000/svg">
             {STYLE}
