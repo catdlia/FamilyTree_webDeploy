@@ -583,18 +583,22 @@ def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
                             save_state(dm)
                 st.divider()
 
-    # 4. ВИДАЛЕННЯ
-    with tabs[3]:
-        if is_editing:
-            st.warning("Будьте обережні. Ця дія незворотна.")
-            if st.button("🗑️ Видалити людину назавжди", type="secondary"):
-                dm.delete_person(pid)
-                st.session_state.selected_person_id = None
-                if st.session_state.view_root_id == pid:
-                    st.session_state.view_root_id = None
-                save_state(dm)
-        else:
-            st.info("Видалення доступне тільки в режимі редагування.")
+        # 4. ВИДАЛЕННЯ
+        with tabs[3]:
+            if is_editing:
+                st.warning("Будьте обережні. Ця дія незворотна.")
+                if st.button("🗑️ Видалити людину назавжди", type="secondary", key=f"del_btn_{pid}"):
+                    dm.delete_person(pid)
+                    st.session_state.selected_person_id = None
+
+                    # --- ВИПРАВЛЕННЯ: Безпечна перевірка ---
+                    if st.session_state.get('view_root_id') == pid:
+                        st.session_state.view_root_id = None
+                    # ---------------------------------------
+
+                    save_state(dm)
+            else:
+                st.info("Видалення доступне тільки в режимі редагування.")
 
 # --- 4. ГОЛОВНИЙ ЗАПУСК ---
 def main():
@@ -614,7 +618,6 @@ def main():
         st.error(f"❌ Помилка конфігурації secrets.toml: {e}")
         st.stop()
 
-    # Ініціалізація аутентифікатора
     authenticator = stauth.Authenticate(
         credentials,
         cookie_params['name'],
@@ -622,19 +625,18 @@ def main():
         cookie_params['expiry_days']
     )
 
-    # --- ВИПРАВЛЕННЯ ---
-    # 1. Ми просто викликаємо функцію, не намагаючись розпакувати результат у змінні.
-    # Це захищає від помилки "cannot unpack NoneType".
-    authenticator.login('main')
+    # 1. Спроба входу (безпечна)
+    try:
+        authenticator.login('main')
+    except TypeError:
+        authenticator.login(location='main')
 
-    # 2. Статус перевіряємо напряму через session_state (це найнадійніший спосіб)
-    if st.session_state["authentication_status"]:
+    # 2. Перевірка статусу
+    if st.session_state.get("authentication_status"):
         # === УСПІШНИЙ ВХІД ===
+        username = st.session_state.get("username")
 
-        # Отримуємо ім'я користувача безпечно з session_state
-        username = st.session_state["username"]
-
-        # Ініціалізація змінних сесії
+        # --- ВАЖЛИВО: ІНІЦІАЛІЗАЦІЯ ВСІХ ЗМІННИХ ---
         if 'last_backup_time' not in st.session_state:
             st.session_state['last_backup_time'] = datetime.datetime.now()
             st.session_state['session_start_time'] = datetime.datetime.now()
@@ -642,20 +644,26 @@ def main():
         if 'selected_person_id' not in st.session_state:
             st.session_state.selected_person_id = None
 
-        # Завантаження даних
+        if 'view_root_id' not in st.session_state:  # <--- ЦЬОГО НЕ ВИСТАЧАЛО
+            st.session_state.view_root_id = None
+
+        if 'linking_mode' not in st.session_state:
+            st.session_state.linking_mode = None
+        # -------------------------------------------
+
+        # Завантажуємо дані
         dm = get_data_manager(username)
 
-        # Рендер інтерфейсу
+        # Рендер
         is_editing = render_sidebar(dm, authenticator)
         render_main_area(dm, is_editing)
 
-    elif st.session_state["authentication_status"] is False:
-        # === НЕВІРНИЙ ПАРОЛЬ ===
+    elif st.session_state.get("authentication_status") is False:
         st.error('❌ Невірний логін або пароль')
 
-    elif st.session_state["authentication_status"] is None:
-        # === ОЧІКУВАННЯ ВВОДУ ===
+    elif st.session_state.get("authentication_status") is None:
         st.warning('🔐 Будь ласка, введіть логін та пароль')
+
 
 if __name__ == "__main__":
     main()
