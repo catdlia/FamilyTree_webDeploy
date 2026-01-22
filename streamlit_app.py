@@ -279,15 +279,15 @@ def render_sidebar(dm: DataManager, authenticator):
             dm.create_test_data(); save_state(dm)
 
     # ЛОГИ АКТИВНОСТІ
-    with st.sidebar.expander("📜 Історія змін", expanded=False):
-        logs = dm.logger.get_recent_logs(10)
-        if not logs:
-            st.write("Історія порожня.")
-        else:
-            for timestamp, user, action, details in logs:
-                st.markdown(f"**{action}** ({user})")
-                st.caption(f"{details} | {timestamp}")
-                st.markdown("---")
+        #    with st.sidebar.expander("📜 Історія змін", expanded=False):
+        # logs = dm.logger.get_recent_logs(10)
+        #if not logs:
+        #    st.write("Історія порожня.")
+        #else:
+            #    for timestamp, user, action, details in logs:
+            #    st.markdown(f"**{action}** ({user})")
+            #    st.caption(f"{details} | {timestamp}")
+    #    st.markdown("---")
 
     return edit_mode
 
