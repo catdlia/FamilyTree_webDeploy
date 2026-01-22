@@ -157,49 +157,50 @@ def render_graph(dm: DataManager, selected_pid: str):
         st.info("Дерево порожнє. Додайте людей через меню зліва.")
         return None
 
-    # 1. Масштаб
+    # --- 1. ЛОГІКА МАСШТАБУВАННЯ ---
     col_zoom, _ = st.columns([1, 4])
     with col_zoom:
-        # Змінив дефолт і крок для плавності
+        # Змінили межі для кращого контролю
         zoom_level = st.slider("🔍 Масштаб", min_value=0.5, max_value=3.0, value=1.0, step=0.1)
 
-    # 2. Підготовка даних
+    # --- 2. ПІДГОТОВКА ДАНИХ ---
     global_root = "1"
-    if not dm.graph.has_node(global_root) and dm.graph.nodes():
-        global_root = list(dm.graph.nodes())[0]
+    if not dm.graph.has_node(global_root):
+        global_root = list(dm.graph.nodes())[0] if dm.graph.nodes() else None
 
     custom_root = st.session_state.get('view_root_id')
     layout_root = custom_root if (custom_root and dm.graph.has_node(custom_root)) else global_root
-
-    if not layout_root: return None
 
     layout_engine = LayoutEngine()
     focus_id = selected_pid if selected_pid else layout_root
 
     positions = layout_engine.calculate_layout(dm.graph, layout_root)
+
     if not positions:
-        st.error("Не вдалося розрахувати макет.")
+        st.error("Не вдалося розрахувати макет дерева.")
         return None
 
-    # 3. Генерація SVG з урахуванням зуму
+    # --- 3. ГЕНЕРАЦІЯ SVG З УРАХУВАННЯМ ЗУМУ ---
     renderer = SVGRenderer(dm.graph, positions, focus_id)
-
-    # ПЕРЕДАЄМО zoom_level СЮДИ
+    # Передаємо zoom_level прямо в метод
     svg_content = renderer.generate_svg(zoom_level=zoom_level)
 
-    # 4. Обробка посилань (Linking Mode)
+    # --- 4. НАЛАШТУВАННЯ КЛІКІВ ---
     is_linking = st.session_state.get('linking_mode') is not None
     click_key = "graph_linking_mode" if is_linking else "graph_view_mode"
 
     if is_linking:
         svg_content = re.sub(r"id='([^']+)'", r"id='LINK_\1'", svg_content)
 
-    # Очищуємо від переносів рядків для безпеки HTML
+    # Додаємо ID для самого SVG (це потрібно для коректної роботи click_detector)
+    svg_content = svg_content.replace('<svg ', f'<svg id="{click_key}" ')
+
+    # Очистка від переносів рядків (важливо для HTML injection)
     svg_content = svg_content.replace('\n', ' ').replace('\r', '')
 
-    # 5. Обгортка для скролу
-    # ВАЖЛИВО: overflow: auto дозволить скролити, коли SVG стане більшим за 600px
-    html_content = f"""
+    # --- 5. ОБГОРТКА ДЛЯ СКРОЛУ ---
+    # overflow: auto дозволить скролити, якщо картинка вилазить за межі 600px
+    html_wrapper = f"""
     <div style="
         width: 100%; 
         height: 600px; 
@@ -208,14 +209,15 @@ def render_graph(dm: DataManager, selected_pid: str):
         border-radius: 5px; 
         background-color: #0e1117; 
         display: flex; 
-        justify-content: center; 
+        justify-content: center;
         align-items: flex-start;
     ">
         {svg_content}
     </div>
     """
 
-    clicked_id_raw = click_detector(html_content, key=click_key)
+    # Використовуємо ТІЛЬКИ click_detector
+    clicked_id_raw = click_detector(html_wrapper, key=click_key)
 
     if clicked_id_raw and is_linking and clicked_id_raw.startswith("LINK_"):
         return clicked_id_raw.replace("LINK_", "")
@@ -597,11 +599,14 @@ def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
 # --- 4. ГОЛОВНИЙ ЗАПУСК ---
 def main():
     try:
+        # Функція для конвертації AttrDict (від Streamlit Secrets) у звичайний dict/list
+        # Це критично для google-auth та streamlit-authenticator
         def safe_convert(obj):
             if isinstance(obj, list): return [safe_convert(x) for x in obj]
             if hasattr(obj, "items"): return {k: safe_convert(v) for k, v in obj.items()}
             return obj
 
+        # Завантажуємо облікові дані
         if 'credentials' not in st.session_state:
             st.session_state['credentials'] = safe_convert(st.secrets['credentials'])
 
@@ -609,7 +614,7 @@ def main():
         cookie_params = st.secrets['cookie']
 
     except Exception as e:
-        st.error(f"❌ Помилка ініціалізації конфігурації: {e}")
+        st.error(f"❌ Помилка конфігурації secrets.toml: {e}")
         st.stop()
 
     # Ініціалізація аутентифікатора
@@ -620,34 +625,43 @@ def main():
         cookie_params['expiry_days']
     )
 
-    # ВАЖЛИВО: Спочатку пробуємо залогінитись (це перевіряє і куки, і форму вводу)
-    # Функція login сама керує станом authentication_status
-    authenticator.login(location='main')
+    # --- ЛОГІКА ВХОДУ ---
+    # Цей метод робить дві речі:
+    # 1. Перевіряє наявність кукі (авто-логін).
+    # 2. Якщо кукі немає - малює форму входу.
+    try:
+        name, authentication_status, username = authenticator.login(location='main')
+    except TypeError:
+        # Фоллбек для старих версій бібліотеки, якщо раптом сигнатура інша
+        name, authentication_status, username = authenticator.login('main')
 
-    # Тепер перевіряємо статус
-    if st.session_state["authentication_status"]:
-        # --- УСПІШНИЙ ВХІД ---
+    # --- ОБРОБКА СТАТУСУ ---
+    if authentication_status:
+        # === УСПІШНИЙ ВХІД ===
 
-        # Відновлюємо змінні сесії, якщо вони стерлися при F5
-        if 'selected_person_id' not in st.session_state:
-            st.session_state.selected_person_id = None
-        if 'view_root_id' not in st.session_state:
-            st.session_state.view_root_id = None
-        if 'linking_mode' not in st.session_state:
-            st.session_state.linking_mode = None
+        # Ініціалізація змінних сесії (якщо це перезавантаження сторінки)
         if 'last_backup_time' not in st.session_state:
             st.session_state['last_backup_time'] = datetime.datetime.now()
             st.session_state['session_start_time'] = datetime.datetime.now()
 
-        username = st.session_state['username']
+        if 'selected_person_id' not in st.session_state:
+            st.session_state.selected_person_id = None
+
+        # Отримуємо DataManager для конкретного користувача
+        # username береться з результату login(), що надійніше
         dm = get_data_manager(username)
 
+        # Рендеримо основний інтерфейс
+        # Передаємо authenticator далі, щоб кнопка Logout у сайдбарі працювала
         is_editing = render_sidebar(dm, authenticator)
         render_main_area(dm, is_editing)
 
-    elif st.session_state["authentication_status"] is False:
+    elif authentication_status is False:
+        # === НЕВІРНИЙ ПАРОЛЬ ===
         st.error('❌ Невірний логін або пароль')
-    elif st.session_state["authentication_status"] is None:
+
+    elif authentication_status is None:
+        # === ОЧІКУВАННЯ ВВОДУ ===
         st.warning('🔐 Будь ласка, введіть логін та пароль')
 
 

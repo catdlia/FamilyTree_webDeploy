@@ -47,17 +47,20 @@ class SVGRenderer:
         # 2. Вузли (Nodes)
         elements.extend(self._draw_nodes())
 
-        # Розраховуємо реальні розміри з урахуванням зуму
+        # 3. РОЗРАХУНОК МАСШТАБУ
+        # viewBox залишається незмінним (це наші логічні координати)
+        # А width/height ми множимо на zoom_level (це фізичні пікселі на екрані)
+
         final_width = int(self.width * zoom_level)
         final_height = int(self.height * zoom_level)
 
-        # min-width та min-height гарантують, що елемент реально збільшиться
-        # viewBox залишається оригінальним (!), це і створює ефект зуму
+        # Збираємо все в один SVG
+        # ВАЖЛИВО: Ми явно вказуємо width і height у пікселях
         svg_content = f"""
         <svg viewBox="{self.min_x} {self.min_y} {self.width} {self.height}" 
              width="{final_width}px" 
-             height="{final_height}px"
-             style="min_width: {final_width}px; min_height: {final_height}px;"
+             height="{final_height}px" 
+             preserveAspectRatio="xMidYMid meet"
              xmlns="http://www.w3.org/2000/svg">
             {STYLE}
             <defs>
