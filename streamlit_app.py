@@ -152,10 +152,18 @@ def cancel_linking_mode():
     st.rerun()
 
 # --- 2. ВІЗУАЛІЗАЦІЯ (SVG) ---
+# --- 2. ВІЗУАЛІЗАЦІЯ (SVG) ---
 def render_graph(dm: DataManager, selected_pid: str):
     if not dm.graph.nodes():
         st.info("Дерево порожнє. Додайте людей через меню зліва.")
         return None
+
+    # --- ЛОГІКА МАСШТАБУВАННЯ ---
+    # Розміщуємо слайдер над графом або в сайдбарі. Тут зручніше над графом.
+    col_zoom, _ = st.columns([1, 4])
+    with col_zoom:
+        zoom_level = st.slider("🔍 Масштаб", min_value=0.1, max_value=2.0, value=1.0, step=0.1)
+    # ----------------------------
 
     global_root = "1"
     if not dm.graph.has_node(global_root):
@@ -176,12 +184,48 @@ def render_graph(dm: DataManager, selected_pid: str):
     renderer = SVGRenderer(dm.graph, positions, focus_id)
     svg_content = renderer.generate_svg()
 
+    # --- ЗАСТОСУВАННЯ МАСШТАБУ ---
+    # Замінюємо стандартні 100% width/height на розраховані пікселі або % * zoom
+    # SVGRenderer повертає viewBox, тому ми можемо маніпулювати реальними розмірами
+
+    # Вираховуємо нові розміри на основі viewBox з renderer
+    new_width = int(renderer.width * zoom_level)
+    new_height = int(renderer.height * zoom_level)
+
+    # Замінюємо width="100%" height="600" на конкретні значення
+    # Використовуємо регулярні вирази або простий replace, якщо формат чіткий
+    svg_content = re.sub(
+        r'width="100%" height="600"',
+        f'width="{new_width}px" height="{new_height}px"',
+        svg_content,
+        count=1
+    )
+    # -----------------------------
+
     is_linking = st.session_state.get('linking_mode') is not None
     if is_linking:
         svg_content = re.sub(r"id='([^']+)'", r"id='LINK_\1'", svg_content)
         click_key = "graph_linking_mode"
     else:
         click_key = "graph_view_mode"
+
+    # Додаємо обгортку з прокруткою (overflow), щоб при великому зумі можна було скролити
+    st.markdown(
+        f"""
+        <div style="overflow: auto; border: 1px solid #444; border-radius: 5px; height: 600px; text-align: center;">
+            {svg_content.replace('<svg ', f'<svg id="{click_key}" ')} 
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # *Примітка: st_click_detector потребує чистого SVG або специфічної структури.
+    # Оскільки ми змінюємо HTML вручну для скролу, click_detector може не спрацювати стандартно.
+    # Тому використовуємо click_detector ТІЛЬКИ для генерації логіки,
+    # а рендеримо його всередині блоку з overflow.
+
+    # АЛЕ st_click_detector сам створює iframe. Тому правильний шлях для Streamlit:
+    # Просто передаємо збільшений SVG в click_detector, він сам зробить скроли, якщо контент великий.
 
     clicked_id_raw = click_detector(svg_content, key=click_key)
 
@@ -346,6 +390,7 @@ def render_main_area(dm: DataManager, is_editing: bool):
         if not linking_mode:
             st.info("👈 Клікніть на людину в дереві або оберіть зі списку.")
 
+
 def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
     data = dm.get_person_data(pid)
 
@@ -370,19 +415,46 @@ def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
 
     # 1. ІНФО
     with tabs[0]:
+        # Функція для автозбереження (викликається при on_change)
+        def save_current_changes():
+            # Отримуємо нові значення з session_state
+            # Використовуємо current_pid, бо pid у функції може бути старим у callback
+            current_pid = st.session_state.selected_person_id
+            if not current_pid: return
+
+            new_name = st.session_state.get(f"edit_name_{current_pid}")
+            new_dob = st.session_state.get(f"edit_dob_{current_pid}")
+            new_dod = st.session_state.get(f"edit_dod_{current_pid}")
+            new_notes = st.session_state.get(f"edit_notes_{current_pid}")
+
+            if new_name:
+                dm.update_person(current_pid, name=new_name, birth_date=new_dob)
+                dm.graph.nodes[current_pid]['date_of_death'] = new_dod
+                dm.save_notes(current_pid, new_notes)
+
+                dm.save_project()
+                # Ми НЕ робимо st.rerun() тут, щоб не збивати фокус вводу,
+                # але дані вже будуть у файлі.
+                # Якщо треба миттєве оновлення графа - тоді треба rerun.
+
         c1, c2 = st.columns(2)
         if is_editing:
+            # ВАЖЛИВО: Використовуємо унікальні ключі (_{pid})
             with c1:
-                name = st.text_input("ПІБ", data.get('label', ''), key="edit_name")
-                dob = st.text_input("Д.Н.", data.get('date_of_birth', ''), key="edit_dob")
+                name = st.text_input("ПІБ", data.get('label', ''), key=f"edit_name_{pid}")
+                dob = st.text_input("Д.Н.", data.get('date_of_birth', ''), key=f"edit_dob_{pid}")
             with c2:
-                dod = st.text_input("Д.С.", data.get('date_of_death', ''), key="edit_dod")
-            notes = st.text_area("Нотатки", data.get('notes', ''), key="edit_notes")
-            if st.button("Зберегти зміни", type="primary"):
+                dod = st.text_input("Д.С.", data.get('date_of_death', ''), key=f"edit_dod_{pid}")
+
+            # Text Area для нотаток
+            notes = st.text_area("Нотатки", data.get('notes', ''), height=150, key=f"edit_notes_{pid}")
+
+            # Кнопка збереження (залишаємо для явного збереження і оновлення графа)
+            if st.button("💾 Зберегти зміни", type="primary", key=f"btn_save_{pid}"):
                 dm.update_person(pid, name=name, birth_date=dob)
                 dm.graph.nodes[pid]['date_of_death'] = dod
                 dm.save_notes(pid, notes)
-                save_state(dm)
+                save_state(dm)  # Це викличе rerun і оновить все
         else:
             with c1:
                 st.write(f"**ПІБ:** {data.get('label', '—')}")
@@ -391,7 +463,7 @@ def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
                 st.write(f"**Дата смерті:** {data.get('date_of_death', '—')}")
             st.divider()
             st.write("**Нотатки:**")
-            st.write(data.get('notes', '—'))
+            st.markdown(data.get('notes', '—'))
 
     # 2. ЗВ'ЯЗКИ
     with tabs[1]:
