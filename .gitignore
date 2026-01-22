@@ -1,12 +1,21 @@
+# --- СЕКРЕТИ ТА КОНФІГУРАЦІЯ (КРИТИЧНО) ---
 .streamlit/secrets.toml
-token.json
 client_secret.json
 google_credentials.json
+token.json
+
+# --- ДАНІ ТА БЕКАПИ ---
 family_tree_data/
-__pycache__/
-.venv/
-.idea/
-*.pyc
 *.zip
+
+# --- СИСТЕМНІ ФАЙЛИ ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+.idea/
+.DS_Store
+
+# --- АДМІНСЬКІ СКРИПТИ ТА КОНТЕКСТ ---
 utils/hasher.py
 _llm_context.md
