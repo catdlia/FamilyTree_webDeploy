@@ -599,14 +599,11 @@ def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
 # --- 4. ГОЛОВНИЙ ЗАПУСК ---
 def main():
     try:
-        # Функція для конвертації AttrDict (від Streamlit Secrets) у звичайний dict/list
-        # Це критично для google-auth та streamlit-authenticator
         def safe_convert(obj):
             if isinstance(obj, list): return [safe_convert(x) for x in obj]
             if hasattr(obj, "items"): return {k: safe_convert(v) for k, v in obj.items()}
             return obj
 
-        # Завантажуємо облікові дані
         if 'credentials' not in st.session_state:
             st.session_state['credentials'] = safe_convert(st.secrets['credentials'])
 
@@ -625,21 +622,19 @@ def main():
         cookie_params['expiry_days']
     )
 
-    # --- ЛОГІКА ВХОДУ ---
-    # Цей метод робить дві речі:
-    # 1. Перевіряє наявність кукі (авто-логін).
-    # 2. Якщо кукі немає - малює форму входу.
-    try:
-        name, authentication_status, username = authenticator.login(location='main')
-    except TypeError:
-        # Фоллбек для старих версій бібліотеки, якщо раптом сигнатура інша
-        name, authentication_status, username = authenticator.login('main')
+    # --- ВИПРАВЛЕННЯ ---
+    # 1. Ми просто викликаємо функцію, не намагаючись розпакувати результат у змінні.
+    # Це захищає від помилки "cannot unpack NoneType".
+    authenticator.login('main')
 
-    # --- ОБРОБКА СТАТУСУ ---
-    if authentication_status:
+    # 2. Статус перевіряємо напряму через session_state (це найнадійніший спосіб)
+    if st.session_state["authentication_status"]:
         # === УСПІШНИЙ ВХІД ===
 
-        # Ініціалізація змінних сесії (якщо це перезавантаження сторінки)
+        # Отримуємо ім'я користувача безпечно з session_state
+        username = st.session_state["username"]
+
+        # Ініціалізація змінних сесії
         if 'last_backup_time' not in st.session_state:
             st.session_state['last_backup_time'] = datetime.datetime.now()
             st.session_state['session_start_time'] = datetime.datetime.now()
@@ -647,23 +642,20 @@ def main():
         if 'selected_person_id' not in st.session_state:
             st.session_state.selected_person_id = None
 
-        # Отримуємо DataManager для конкретного користувача
-        # username береться з результату login(), що надійніше
+        # Завантаження даних
         dm = get_data_manager(username)
 
-        # Рендеримо основний інтерфейс
-        # Передаємо authenticator далі, щоб кнопка Logout у сайдбарі працювала
+        # Рендер інтерфейсу
         is_editing = render_sidebar(dm, authenticator)
         render_main_area(dm, is_editing)
 
-    elif authentication_status is False:
+    elif st.session_state["authentication_status"] is False:
         # === НЕВІРНИЙ ПАРОЛЬ ===
         st.error('❌ Невірний логін або пароль')
 
-    elif authentication_status is None:
+    elif st.session_state["authentication_status"] is None:
         # === ОЧІКУВАННЯ ВВОДУ ===
         st.warning('🔐 Будь ласка, введіть логін та пароль')
-
 
 if __name__ == "__main__":
     main()
