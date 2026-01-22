@@ -43,23 +43,18 @@ def get_data_manager(username: str):
     """
     # 1. Шлях до папки конкретного користувача
     user_data_dir = os.path.join("family_tree_data", username)
-    
+
     ps = get_persistence_service()
-    
-    # --- ВИПРАВЛЕННЯ ТУТ ---
-    # Перевіряємо саме папку КОРИСТУВАЧА. Якщо її немає - значить треба тягнути бекап.
-    # (Навіть якщо папка family_tree_data існує, але порожня)
-    need_restore = not os.path.exists(user_data_dir)
-    
-    if ps.is_enabled and need_restore:
-        with st.spinner("☁️ Завантаження даних з хмари..."):
-            print(f"User folder {user_data_dir} missing. Downloading backup...")
-            if ps.download_latest_backup():
-                st.toast("Дані успішно відновлено!", icon="✅")
-            else:
-                print("No backup found or download failed.")
-    
-    # 2. Ініціалізуємо DataManager
+
+    # 2. Перевіряємо, чи є дані ЦЬОГО користувача локально
+    # Якщо папки немає - пробуємо відновити з хмари (бо ми могли видалити її локально)
+    if ps.is_enabled and not os.path.exists(user_data_dir):
+        # --- ВИПРАВЛЕННЯ: Прибрано st.spinner, бо він викликає CacheReplayClosureError ---
+        print(f"🔄 Відновлення даних з хмари для {username}...")
+        ps.download_latest_backup()
+        # ---------------------------------------------------------------------------------
+
+    # 3. Ініціалізуємо DataManager
     dm = DataManager(username)
     dm.load_project()
     return dm
@@ -294,23 +289,6 @@ def render_sidebar(dm: DataManager, authenticator):
                 st.caption(f"{details} | {timestamp}")
                 st.markdown("---")
 
-# --- ТИМЧАСОВА ДІАГНОСТИКА (DEBUG) ---
-    with st.sidebar.expander("🐞 Діагностика хмари", expanded=True):
-        ps = get_persistence_service()
-        st.write(f"Підключено: {ps.is_enabled}")
-        st.write(f"Статус: {ps.status}")
-        
-        if st.button("Перевірити доступ до Диску"):
-            if ps.is_enabled:
-                try:
-                    # Просте читання назви кореневої папки
-                    folder = ps.service.files().get(fileId=ps.root_folder_id).execute()
-                    st.success(f"Доступ є! Папка: {folder['name']}")
-                except Exception as e:
-                    st.error(f"Помилка доступу: {e}")
-            else:
-                st.error("Сервіс не ініціалізовано")
-    
     return edit_mode
 
 def render_main_area(dm: DataManager, is_editing: bool):
