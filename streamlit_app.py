@@ -294,6 +294,32 @@ def render_sidebar(dm: DataManager, authenticator):
                 st.caption(f"{details} | {timestamp}")
                 st.markdown("---")
 
+    with st.sidebar.expander("🐞 Діагностика хмари", expanded=True):
+        ps = get_persistence_service()
+        st.write(f"Enabled: {ps.is_enabled}")
+        st.write(f"Status: {ps.status}")
+        
+        # Перевіряємо ID папки
+        if ps.root_folder_id:
+            st.write(f"Root ID: `{ps.root_folder_id[:5]}...`")
+        else:
+            st.error("Root ID не знайдено в секретах!")
+
+        # Пробуємо знайти бекапи вручну і показати результат
+        if st.button("Test List Backups"):
+            if ps.service and ps.root_folder_id:
+                try:
+                    q = f"'{ps.root_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+                    res = ps.service.files().list(q=q, fields="files(id, name)").execute()
+                    files = res.get('files', [])
+                    st.write(f"Знайдено папок: {len(files)}")
+                    for f in files:
+                        st.code(f"{f['name']} ({f['id']})")
+                except Exception as e:
+                    st.error(f"API Error: {e}")
+            else:
+                st.error("Сервіс не готовий")
+    
     return edit_mode
 
 def render_main_area(dm: DataManager, is_editing: bool):
