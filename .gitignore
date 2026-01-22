@@ -1,0 +1,10 @@
+.streamlit/secrets.toml
+token.json
+client_secret.json
+google_credentials.json
+family_tree_data/
+__pycache__/
+.venv/
+.idea/
+*.pyc
+*.zip

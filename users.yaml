@@ -1,0 +1,8 @@
+credentials:
+  usernames: {}
+cookie:
+  expiry_days: 30
+  key: "random_signature_key_change_this_to_something_long"
+  name: "family_tree_cookie"
+preauthorized:
+  emails: []

@@ -1,0 +1,19 @@
+cookie:
+  expiry_days: 1
+  key: random_signature_key_must_be_complex
+  name: family_tree_cookie
+credentials:
+  usernames:
+    admin:
+      email: admin@gmail.com
+      logged_in: false
+      name: Administrator
+      password: $2b$12$jMOFdgyuOafr7P/ATUJC5.6HHkvHDsN2IjodnVKj5U/1E1iJAolji
+    illia:
+      email: admin@test.com
+      first_name: ADMIN
+      last_name: admin
+      logged_in: false
+      password: $2b$12$xJdUcpr39O5w4DQyROpN3Oim3iHRiyKB9uEuaMUnxST5VbipvLl4m
+      password_hint: '123'
+      roles: null

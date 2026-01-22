@@ -1,0 +1,8 @@
+streamlit
+streamlit-authenticator
+st-click-detector
+networkx
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+bcrypt
