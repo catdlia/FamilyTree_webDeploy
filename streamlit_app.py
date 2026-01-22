@@ -37,38 +37,47 @@ def get_persistence_service():
     return PersistenceService()
 
 @st.cache_resource
-def get_data_manager():
-    # 1. Пробуємо синхронізувати з хмари при холодному старті
+def get_data_manager(username: str):
+    """
+    Створює DataManager для конкретного користувача.
+    """
+    # 1. Шлях до папки конкретного користувача
+    user_data_dir = os.path.join("family_tree_data", username)
+
     ps = get_persistence_service()
-    if not os.path.exists("family_tree_data"):
-        # Якщо папки немає локально, пробуємо стягнути з Drive
-        ps.download_latest_backup()
 
-    # 2. Ініціалізуємо DataManager
-    dm = DataManager()
-    data_dir = "family_tree_data"
-    data_file = os.path.join(data_dir, "family.tree")
+    # 2. Перевіряємо, чи є дані ЦЬОГО користувача локально
+    # Якщо папки немає - пробуємо відновити з хмари (бо ми могли видалити її локально)
+    if ps.is_enabled and not os.path.exists(user_data_dir):
+        # Якщо це локальний запуск і інтернет є, це відновить видалену папку
+        with st.spinner("🔄 Відновлення даних з хмари..."):
+            ps.download_latest_backup()
 
-    if not os.path.exists(data_dir): os.makedirs(data_dir)
-    if os.path.exists(data_file): dm.load_project(data_file)
-    else:
-        dm.project_file_path = os.path.abspath(data_file)
-        dm.project_directory = os.path.dirname(dm.project_file_path)
+    # 3. Ініціалізуємо DataManager
+    dm = DataManager(username)
+    dm.load_project()
     return dm
 
 def perform_backup(manual=False):
     """Виконує бекап з перевіркою часу."""
-    BACKUP_INTERVAL_MIN = 10
+    # Змінено на 60 хвилин
+    BACKUP_INTERVAL_MIN = 60
+
     now = datetime.datetime.now()
     last_backup = st.session_state.get('last_backup_time')
 
     should_backup = False
 
     if manual:
+        # Ручний запуск завжди виконується
         should_backup = True
     elif last_backup is None:
-        should_backup = True
+        # ВИПРАВЛЕННЯ: Якщо це авто-запуск, але час ще не встановлено,
+        # ми НЕ робимо бекап, а просто ініціалізуємо таймер (це робиться в main)
+        # Але якщо сюди дійшло і last_backup is None - значить щось пішло не так, краще пропустити.
+        should_backup = False
     else:
+        # Перевіряємо, чи пройшла година
         diff = (now - last_backup).total_seconds() / 60
         if diff > BACKUP_INTERVAL_MIN:
             should_backup = True
@@ -76,29 +85,33 @@ def perform_backup(manual=False):
     if should_backup:
         ps = get_persistence_service()
 
-        # Явна перевірка для ручного режиму
         if manual and (not ps.is_enabled):
             st.sidebar.error(f"Налаштування хмари неповні: {ps.status}")
             return
 
         if ps.is_enabled:
-            with st.spinner("💾 Створення бекапу на Google Drive..."):
-                if ps.upload_backup():
-                    st.session_state['last_backup_time'] = now
-                    if manual:
-                        # ВИПРАВЛЕНО: icon="cloud" -> icon="☁️"
+            # Для автоматичного бекапу не блокуємо інтерфейс спіннером на весь екран,
+            # але показуємо статус у toast
+            if manual:
+                with st.spinner("💾 Створення бекапу на Google Drive..."):
+                    if ps.upload_backup():
+                        st.session_state['last_backup_time'] = now
                         st.toast("✅ Бекап успішно створено!", icon="☁️")
                     else:
-                        print(f"Auto-backup created at {now}")
-                else:
-                    if manual: st.sidebar.error("Помилка завантаження (див. консоль).")
+                        st.sidebar.error("Помилка завантаження.")
+            else:
+                # Автоматичний (тихий) режим
+                if ps.upload_backup():
+                    st.session_state['last_backup_time'] = now
+                    print(f"Auto-backup created at {now}")
+
     elif manual:
-        st.sidebar.info(f"Бекап вже був створений нещодавно (чекайте {BACKUP_INTERVAL_MIN} хв або перезавантажте).")
+        st.sidebar.info(f"Бекап вже був створений нещодавно (чекайте {BACKUP_INTERVAL_MIN} хв).")
 
 def save_state(dm):
-    """Зберігає локально і тригерить авто-бекап."""
+    """Зберігає локально і перевіряє необхідність авто-бекапу."""
     dm.save_project()
-    # Автоматичний бекап
+    # Перевірка на необхідність авто-бекапу (без примусу)
     perform_backup(manual=False)
     st.cache_resource.clear()
     st.rerun()
@@ -189,8 +202,6 @@ def render_sidebar(dm: DataManager, authenticator):
     if edit_mode:
         col_backup, col_last = st.sidebar.columns([1, 2])
         if col_backup.button("☁️"):
-            # Примусове скидання кешу, якщо треба
-            # st.cache_resource.clear()
             perform_backup(manual=True)
 
         last_time = st.session_state.get('last_backup_time')
@@ -198,7 +209,10 @@ def render_sidebar(dm: DataManager, authenticator):
             time_str = last_time.strftime("%H:%M")
             col_last.caption(f"Останній: {time_str}")
         else:
-            col_last.caption("Бекапів не було")
+            # Показуємо час запуску сесії як старт відліку
+            start_time = st.session_state.get('session_start_time')
+            if start_time:
+                col_last.caption(f"Сесія з: {start_time.strftime('%H:%M')}")
 
     with st.sidebar.expander("ℹ️ Легенда кольорів", expanded=False):
         st.markdown("""
@@ -248,6 +262,17 @@ def render_sidebar(dm: DataManager, authenticator):
                     new_id = dm.add_person(new_name)
                     st.session_state.selected_person_id = new_id
                     save_state(dm)
+
+        # Опція для примусового відновлення (якщо видалив папку)
+        if st.sidebar.button("🔄 Відновити з хмари (FORCE)"):
+             with st.spinner("Завантаження..."):
+                 ps = get_persistence_service()
+                 if ps.download_latest_backup():
+                     st.success("Відновлено!")
+                     st.cache_resource.clear()
+                     st.rerun()
+                 else:
+                     st.error("Бекапів не знайдено.")
 
         if not people and st.sidebar.button("🛠 Тестові дані"):
             dm.create_test_data(); save_state(dm)
@@ -482,7 +507,6 @@ def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
                 with c1:
                     st.write(f"📄 **{doc['filename']}**")
                     if doc['type'] == 'image':
-                        # ВИПРАВЛЕНО: 'auto' замість 'stretch' для st.image
                         st.image(doc['path'], caption=doc['filename'], width=None)
                     elif doc['filename'].lower().endswith('.pdf'):
                         with st.expander("👁️ Переглянути PDF"):
@@ -549,7 +573,17 @@ def main():
         if 'linking_mode' not in st.session_state:
             st.session_state.linking_mode = None
 
-        dm = get_data_manager()
+        # --- ВИПРАВЛЕННЯ: Ініціалізуємо таймер бекапів "зараз" ---
+        if 'last_backup_time' not in st.session_state:
+            st.session_state['last_backup_time'] = datetime.datetime.now()
+            st.session_state['session_start_time'] = datetime.datetime.now()
+
+        # Отримуємо username для Multi-Tenancy
+        username = st.session_state.get('username')
+
+        # Ініціалізуємо менеджера для цього користувача (з авто-відновленням)
+        dm = get_data_manager(username)
+
         is_editing = render_sidebar(dm, authenticator)
         render_main_area(dm, is_editing)
 

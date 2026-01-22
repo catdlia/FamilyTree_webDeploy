@@ -16,6 +16,7 @@
         logger_service.py
         security_utils.py
         persistence_service.py
+    .streamlit/
     family_tree_data/
         1_Adam/
         8_4321/

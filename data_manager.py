@@ -1,33 +1,39 @@
 """
 Data Manager for Family Tree - Web Version.
 Handles JSON loading/saving + Logging.
+Supports Multi-Tenancy (User Isolation).
 """
 
 import json
 import os
 import networkx as nx
 import shutil
-from utils.logger_service import LoggerService  # <--- ІМПОРТ
+from utils.logger_service import LoggerService
 
 # Relationship type constants
 REL_PARTNER = 'partner'
 REL_CHILD = 'child'
 
 class DataManager:
-    def __init__(self):
+    def __init__(self, username: str):
+        self.username = username
         self.graph = nx.DiGraph()
-        self.project_file_path = ""
-        self.project_directory = ""
         self.next_person_id = 1
-        self.logger = LoggerService()  # <--- ІНІЦІАЛІЗАЦІЯ
+        self.logger = LoggerService()
 
-    def load_project(self, filepath: str) -> bool:
-        self.project_file_path = os.path.abspath(filepath)
-        self.project_directory = os.path.dirname(self.project_file_path)
+        # Головна папка даних
+        self.root_data_dir = "family_tree_data"
+        # Папка конкретного користувача
+        self.project_directory = os.path.join(self.root_data_dir, self.username)
+        # Файл дерева користувача
+        self.project_file_path = os.path.join(self.project_directory, "family.tree")
 
+        # Створюємо папку користувача, якщо її немає
         if not os.path.exists(self.project_directory):
             os.makedirs(self.project_directory, exist_ok=True)
 
+    def load_project(self) -> bool:
+        """Loads a project from user's folder."""
         if os.path.exists(self.project_file_path):
             try:
                 with open(self.project_file_path, 'r', encoding='utf-8') as f:
@@ -59,10 +65,11 @@ class DataManager:
 
         self.graph.add_node(person_id, label=name, documents=[], birth_date="", notes="")
 
+        # Створюємо папку для людини всередині папки користувача
         person_dir = os.path.join(self.project_directory, f"{person_id}_{name}")
         os.makedirs(person_dir, exist_ok=True)
 
-        self.logger.log("ADD_PERSON", f"Created {name} (ID: {person_id})") # <--- LOG
+        self.logger.log("ADD_PERSON", f"User {self.username} created {name} (ID: {person_id})")
         return person_id
 
     def update_person(self, person_id: str, name: str = None, birth_date: str = None) -> bool:
@@ -86,7 +93,7 @@ class DataManager:
             changes.append(f"DOB updated")
 
         if changes:
-            self.logger.log("UPDATE_PERSON", f"ID {person_id}: {', '.join(changes)}") # <--- LOG
+            self.logger.log("UPDATE_PERSON", f"ID {person_id}: {', '.join(changes)}")
         return True
 
     def delete_person(self, person_id: str) -> bool:
@@ -103,7 +110,7 @@ class DataManager:
             if node_data.get('mother') == person_id: self.graph.nodes[node_id]['mother'] = None
 
         self.graph.remove_node(person_id)
-        self.logger.log("DELETE_PERSON", f"Deleted {name} (ID: {person_id})") # <--- LOG
+        self.logger.log("DELETE_PERSON", f"Deleted {name} (ID: {person_id})")
         return True
 
     def save_notes(self, person_id: str, notes_content: str):
@@ -117,7 +124,6 @@ class DataManager:
         try:
             with open(os.path.join(person_dir, "notes.txt"), 'w', encoding='utf-8') as f:
                 f.write(notes_content)
-            self.logger.log("UPDATE_NOTES", f"Updated notes for ID {person_id}") # <--- LOG
         except: pass
         self.save_project()
 
@@ -151,7 +157,7 @@ class DataManager:
                     'display_name': uploaded_file.name
                 })
 
-            self.logger.log("ADD_DOC", f"Added {uploaded_file.name} to ID {person_id}") # <--- LOG
+            self.logger.log("ADD_DOC", f"Added {uploaded_file.name} to ID {person_id}")
             return True
         except Exception as e:
             print(f"Error: {e}")
@@ -167,7 +173,7 @@ class DataManager:
         docs = self.graph.nodes[person_id].get('documents', [])
         self.graph.nodes[person_id]['documents'] = [d for d in docs if d['filename'] != filename]
 
-        self.logger.log("DEL_DOC", f"Removed {filename} from ID {person_id}") # <--- LOG
+        self.logger.log("DEL_DOC", f"Removed {filename} from ID {person_id}")
         return True
 
     def get_person_documents(self, person_id: str) -> list:
@@ -200,20 +206,12 @@ class DataManager:
         if not self.graph.has_node(child_id) or not self.graph.has_node(parent_id): return False
         self.graph.nodes[child_id][parent_type] = parent_id
         self.graph.add_edge(parent_id, child_id, type=REL_CHILD)
-
-        c_name = self.graph.nodes[child_id]['label']
-        p_name = self.graph.nodes[parent_id]['label']
-        self.logger.log("LINK", f"{p_name} is {parent_type} of {c_name}") # <--- LOG
         return True
 
     def add_partner(self, person1_id: str, person2_id: str) -> bool:
         if not self.graph.has_node(person1_id) or not self.graph.has_node(person2_id): return False
         self.graph.add_edge(person1_id, person2_id, type=REL_PARTNER)
         self.graph.add_edge(person2_id, person1_id, type=REL_PARTNER)
-
-        n1 = self.graph.nodes[person1_id]['label']
-        n2 = self.graph.nodes[person2_id]['label']
-        self.logger.log("LINK", f"{n1} partnered with {n2}") # <--- LOG
         return True
 
     def add_child(self, parent_id: str, child_id: str) -> bool:
@@ -222,10 +220,6 @@ class DataManager:
         if not child_data.get('father'): child_data['father'] = parent_id
         elif not child_data.get('mother'): child_data['mother'] = parent_id
         self.graph.add_edge(parent_id, child_id, type=REL_CHILD)
-
-        p_name = self.graph.nodes[parent_id]['label']
-        c_name = self.graph.nodes[child_id]['label']
-        self.logger.log("LINK", f"{c_name} added as child of {p_name}") # <--- LOG
         return True
 
     def get_parents(self, person_id: str) -> tuple:

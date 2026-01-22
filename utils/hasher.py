@@ -2,7 +2,7 @@
 import bcrypt
 
 # Список паролів, які ти хочеш використовувати
-passwords_to_hash = ['admin123', 'f87A]35EDo32']
+passwords_to_hash = ['84307876', 'f87A]35EDo32', 'testpasswordforgoys']
 
 print("--- ЗБЕРЕЖИ ЦІ ХЕШІ У .streamlit/secrets.toml ---")
 

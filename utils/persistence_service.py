@@ -1,5 +1,6 @@
 import os
 import shutil
+import io  # <--- ДОДАНО ЦЕЙ ІМПОРТ
 import streamlit as st
 from datetime import datetime
 from google.oauth2.credentials import Credentials
@@ -109,9 +110,8 @@ class PersistenceService:
 
         try:
             # 1. Отримуємо/Створюємо кореневу папку 'FamilyTreeBackup'
-            # (Тепер ми можемо її створити самі, бо ми діємо від імені користувача)
             if self.root_folder_id:
-                root_id = self.root_folder_id  # Використовуємо ID з конфігу якщо є
+                root_id = self.root_folder_id
             else:
                 root_id = self._get_or_create_folder(ROOT_FOLDER_NAME)
 

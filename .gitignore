@@ -8,3 +8,5 @@ __pycache__/
 .idea/
 *.pyc
 *.zip
+utils/hasher.py
+_llm_context.md
