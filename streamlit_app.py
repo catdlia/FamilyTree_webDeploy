@@ -160,9 +160,10 @@ def render_graph(dm: DataManager, selected_pid: str):
     # 1. Масштаб
     col_zoom, _ = st.columns([1, 4])
     with col_zoom:
-        zoom_level = st.slider("🔍 Масштаб", min_value=0.1, max_value=3.0, value=1.0, step=0.1)
+        # Змінив дефолт і крок для плавності
+        zoom_level = st.slider("🔍 Масштаб", min_value=0.5, max_value=3.0, value=1.0, step=0.1)
 
-    # 2. Розрахунок позицій
+    # 2. Підготовка даних
     global_root = "1"
     if not dm.graph.has_node(global_root) and dm.graph.nodes():
         global_root = list(dm.graph.nodes())[0]
@@ -170,9 +171,7 @@ def render_graph(dm: DataManager, selected_pid: str):
     custom_root = st.session_state.get('view_root_id')
     layout_root = custom_root if (custom_root and dm.graph.has_node(custom_root)) else global_root
 
-    # Якщо кореня все ще немає - нічого не малюємо
-    if not layout_root:
-        return None
+    if not layout_root: return None
 
     layout_engine = LayoutEngine()
     focus_id = selected_pid if selected_pid else layout_root
@@ -182,40 +181,40 @@ def render_graph(dm: DataManager, selected_pid: str):
         st.error("Не вдалося розрахувати макет.")
         return None
 
+    # 3. Генерація SVG з урахуванням зуму
     renderer = SVGRenderer(dm.graph, positions, focus_id)
-    svg_content = renderer.generate_svg()
 
-    # 3. Застосування масштабу (Regex)
-    new_width = int(renderer.width * zoom_level)
-    new_height = int(renderer.height * zoom_level)
+    # ПЕРЕДАЄМО zoom_level СЮДИ
+    svg_content = renderer.generate_svg(zoom_level=zoom_level)
 
-    # Замінюємо розміри у заголовку SVG
-    svg_content = re.sub(
-        r'width="100%" height="600"',
-        f'width="{new_width}px" height="{new_height}px"',
-        svg_content,
-        count=1
-    )
-
-    # 4. Обробка кліків (додаємо ID посиланням)
+    # 4. Обробка посилань (Linking Mode)
     is_linking = st.session_state.get('linking_mode') is not None
     click_key = "graph_linking_mode" if is_linking else "graph_view_mode"
 
     if is_linking:
         svg_content = re.sub(r"id='([^']+)'", r"id='LINK_\1'", svg_content)
 
-    # ВАЖЛИВО: Видаляємо всі переноси рядків, щоб HTML не поламався у string
+    # Очищуємо від переносів рядків для безпеки HTML
     svg_content = svg_content.replace('\n', ' ').replace('\r', '')
 
-    # 5. Обгортка для скролу + Click Detector
-    # Використовуємо f-string обережно
+    # 5. Обгортка для скролу
+    # ВАЖЛИВО: overflow: auto дозволить скролити, коли SVG стане більшим за 600px
     html_content = f"""
-    <div style="width: 100%; height: 600px; overflow: auto; border: 1px solid #444; border-radius: 5px; background-color: #0e1117; display: flex; justify-content: center; align-items: flex-start;">
+    <div style="
+        width: 100%; 
+        height: 600px; 
+        overflow: auto; 
+        border: 1px solid #444; 
+        border-radius: 5px; 
+        background-color: #0e1117; 
+        display: flex; 
+        justify-content: center; 
+        align-items: flex-start;
+    ">
         {svg_content}
     </div>
     """
 
-    # Виводимо через детектор
     clicked_id_raw = click_detector(html_content, key=click_key)
 
     if clicked_id_raw and is_linking and clicked_id_raw.startswith("LINK_"):
@@ -610,9 +609,10 @@ def main():
         cookie_params = st.secrets['cookie']
 
     except Exception as e:
-        st.error(f"❌ Помилка ініціалізації: {e}")
+        st.error(f"❌ Помилка ініціалізації конфігурації: {e}")
         st.stop()
 
+    # Ініціалізація аутентифікатора
     authenticator = stauth.Authenticate(
         credentials,
         cookie_params['name'],
@@ -620,41 +620,36 @@ def main():
         cookie_params['expiry_days']
     )
 
-    if check_session_timeout(authenticator): return
+    # ВАЖЛИВО: Спочатку пробуємо залогінитись (це перевіряє і куки, і форму вводу)
+    # Функція login сама керує станом authentication_status
+    authenticator.login(location='main')
 
-    try:
-        authenticator.login(location='main')
-    except Exception as e:
-        st.error(f"Помилка входу: {e}")
+    # Тепер перевіряємо статус
+    if st.session_state["authentication_status"]:
+        # --- УСПІШНИЙ ВХІД ---
 
-    if st.session_state.get("authentication_status"):
+        # Відновлюємо змінні сесії, якщо вони стерлися при F5
         if 'selected_person_id' not in st.session_state:
             st.session_state.selected_person_id = None
         if 'view_root_id' not in st.session_state:
             st.session_state.view_root_id = None
         if 'linking_mode' not in st.session_state:
             st.session_state.linking_mode = None
-
-        # --- ВИПРАВЛЕННЯ: Ініціалізуємо таймер бекапів "зараз" ---
         if 'last_backup_time' not in st.session_state:
             st.session_state['last_backup_time'] = datetime.datetime.now()
             st.session_state['session_start_time'] = datetime.datetime.now()
 
-        # Отримуємо username для Multi-Tenancy
-        username = st.session_state.get('username')
-
-        # Ініціалізуємо менеджера для цього користувача (з авто-відновленням)
+        username = st.session_state['username']
         dm = get_data_manager(username)
 
         is_editing = render_sidebar(dm, authenticator)
         render_main_area(dm, is_editing)
 
-    elif st.session_state.get("authentication_status") is False:
+    elif st.session_state["authentication_status"] is False:
         st.error('❌ Невірний логін або пароль')
-        brute_force_protection()
-
-    elif st.session_state.get("authentication_status") is None:
+    elif st.session_state["authentication_status"] is None:
         st.warning('🔐 Будь ласка, введіть логін та пароль')
+
 
 if __name__ == "__main__":
     main()

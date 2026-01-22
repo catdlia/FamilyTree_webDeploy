@@ -38,7 +38,7 @@ class SVGRenderer:
         else:
             self.min_x, self.min_y, self.width, self.height = 0, 0, 800, 600
 
-    def generate_svg(self) -> str:
+    def generate_svg(self, zoom_level: float = 1.0) -> str:
         elements = []
 
         # 1. Лінії зв'язків (Edges)
@@ -47,10 +47,18 @@ class SVGRenderer:
         # 2. Вузли (Nodes)
         elements.extend(self._draw_nodes())
 
-        # Збираємо все в один SVG
+        # Розраховуємо реальні розміри з урахуванням зуму
+        final_width = int(self.width * zoom_level)
+        final_height = int(self.height * zoom_level)
+
+        # min-width та min-height гарантують, що елемент реально збільшиться
+        # viewBox залишається оригінальним (!), це і створює ефект зуму
         svg_content = f"""
         <svg viewBox="{self.min_x} {self.min_y} {self.width} {self.height}" 
-             width="100%" height="600" xmlns="http://www.w3.org/2000/svg">
+             width="{final_width}px" 
+             height="{final_height}px"
+             style="min_width: {final_width}px; min_height: {final_height}px;"
+             xmlns="http://www.w3.org/2000/svg">
             {STYLE}
             <defs>
                 <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="3" orient="auto" markerUnits="strokeWidth">
