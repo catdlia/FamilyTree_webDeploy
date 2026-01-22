@@ -62,7 +62,7 @@ def get_data_manager(username: str):
 def perform_backup(manual=False):
     """Виконує бекап з перевіркою часу."""
     # Змінено на 60 хвилин
-    BACKUP_INTERVAL_MIN = 60
+    BACKUP_INTERVAL_MIN = 5
 
     now = datetime.datetime.now()
     last_backup = st.session_state.get('last_backup_time')
