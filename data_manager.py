@@ -40,6 +40,22 @@ class DataManager:
                     data = json.load(f)
                 self.graph = nx.node_link_graph(data, edges="links")
 
+                # --- ЗАХИСТ ВІД БИТИХ ДАНИХ (ЦИКЛІВ) ---
+                # Якщо файл вже містить цикл, видаляємо його, щоб програма запустилася
+                try:
+                    cycles = list(nx.simple_cycles(self.graph))
+                    if cycles:
+                        print(f"⚠️ Found cycles in saved graph: {cycles}. Fixing...")
+                        for cycle in cycles:
+                            # Розриваємо цикл (видаляємо останнє ребро)
+                            u, v = cycle[0], cycle[1]
+                            if self.graph.has_edge(u, v):
+                                self.graph.remove_edge(u, v)
+                                print(f"Removed edge {u}->{v} to break cycle.")
+                except Exception as e:
+                    print(f"Cycle check error: {e}")
+                # ---------------------------------------
+
                 node_ids = [int(node_id) for node_id in self.graph.nodes() if node_id.isdigit()]
                 self.next_person_id = max(node_ids) + 1 if node_ids else 1
                 return True
@@ -204,7 +220,33 @@ class DataManager:
 
     def add_parent(self, child_id: str, parent_id: str, parent_type: str) -> bool:
         if not self.graph.has_node(child_id) or not self.graph.has_node(parent_id): return False
+
+        # --- ПЕРЕВІРКА НА ЦИКЛ ---
+        # Якщо вже існує шлях від батька до дитини, то додавання child->parent створить цикл
+        # Але тут ми додаємо ребро parent->child (REL_CHILD).
+        # Тому цикл виникне, якщо вже є шлях child->...->parent.
+        if nx.has_path(self.graph, child_id, parent_id):
+            raise ValueError(f"Неможливо додати: {parent_id} вже є нащадком {child_id}. Це створить цикл!")
+        # -------------------------
+
         self.graph.nodes[child_id][parent_type] = parent_id
+        self.graph.add_edge(parent_id, child_id, type=REL_CHILD)
+        return True
+
+    def add_child(self, parent_id: str, child_id: str) -> bool:
+        if not self.graph.has_node(parent_id) or not self.graph.has_node(child_id): return False
+
+        # --- ПЕРЕВІРКА НА ЦИКЛ ---
+        # Додаємо parent->child. Перевіряємо, чи є шлях child->parent.
+        if nx.has_path(self.graph, child_id, parent_id):
+            raise ValueError(f"Неможливо додати: {parent_id} вже є нащадком {child_id}. Це створить цикл!")
+        # -------------------------
+
+        child_data = self.graph.nodes[child_id]
+        if not child_data.get('father'):
+            child_data['father'] = parent_id
+        elif not child_data.get('mother'):
+            child_data['mother'] = parent_id
         self.graph.add_edge(parent_id, child_id, type=REL_CHILD)
         return True
 
@@ -212,14 +254,6 @@ class DataManager:
         if not self.graph.has_node(person1_id) or not self.graph.has_node(person2_id): return False
         self.graph.add_edge(person1_id, person2_id, type=REL_PARTNER)
         self.graph.add_edge(person2_id, person1_id, type=REL_PARTNER)
-        return True
-
-    def add_child(self, parent_id: str, child_id: str) -> bool:
-        if not self.graph.has_node(parent_id) or not self.graph.has_node(child_id): return False
-        child_data = self.graph.nodes[child_id]
-        if not child_data.get('father'): child_data['father'] = parent_id
-        elif not child_data.get('mother'): child_data['mother'] = parent_id
-        self.graph.add_edge(parent_id, child_id, type=REL_CHILD)
         return True
 
     def get_parents(self, person_id: str) -> tuple:
