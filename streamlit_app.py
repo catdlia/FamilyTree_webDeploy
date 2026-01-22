@@ -152,82 +152,71 @@ def cancel_linking_mode():
     st.rerun()
 
 # --- 2. ВІЗУАЛІЗАЦІЯ (SVG) ---
-# --- 2. ВІЗУАЛІЗАЦІЯ (SVG) ---
 def render_graph(dm: DataManager, selected_pid: str):
     if not dm.graph.nodes():
         st.info("Дерево порожнє. Додайте людей через меню зліва.")
         return None
 
-    # --- ЛОГІКА МАСШТАБУВАННЯ ---
-    # Розміщуємо слайдер над графом або в сайдбарі. Тут зручніше над графом.
+    # 1. Масштаб
     col_zoom, _ = st.columns([1, 4])
     with col_zoom:
-        zoom_level = st.slider("🔍 Масштаб", min_value=0.1, max_value=2.0, value=1.0, step=0.1)
-    # ----------------------------
+        zoom_level = st.slider("🔍 Масштаб", min_value=0.1, max_value=3.0, value=1.0, step=0.1)
 
+    # 2. Розрахунок позицій
     global_root = "1"
-    if not dm.graph.has_node(global_root):
-        global_root = list(dm.graph.nodes())[0] if dm.graph.nodes() else None
+    if not dm.graph.has_node(global_root) and dm.graph.nodes():
+        global_root = list(dm.graph.nodes())[0]
 
     custom_root = st.session_state.get('view_root_id')
     layout_root = custom_root if (custom_root and dm.graph.has_node(custom_root)) else global_root
+
+    # Якщо кореня все ще немає - нічого не малюємо
+    if not layout_root:
+        return None
 
     layout_engine = LayoutEngine()
     focus_id = selected_pid if selected_pid else layout_root
 
     positions = layout_engine.calculate_layout(dm.graph, layout_root)
-
     if not positions:
-        st.error("Не вдалося розрахувати макет дерева.")
+        st.error("Не вдалося розрахувати макет.")
         return None
 
     renderer = SVGRenderer(dm.graph, positions, focus_id)
     svg_content = renderer.generate_svg()
 
-    # --- ЗАСТОСУВАННЯ МАСШТАБУ ---
-    # Замінюємо стандартні 100% width/height на розраховані пікселі або % * zoom
-    # SVGRenderer повертає viewBox, тому ми можемо маніпулювати реальними розмірами
-
-    # Вираховуємо нові розміри на основі viewBox з renderer
+    # 3. Застосування масштабу (Regex)
     new_width = int(renderer.width * zoom_level)
     new_height = int(renderer.height * zoom_level)
 
-    # Замінюємо width="100%" height="600" на конкретні значення
-    # Використовуємо регулярні вирази або простий replace, якщо формат чіткий
+    # Замінюємо розміри у заголовку SVG
     svg_content = re.sub(
         r'width="100%" height="600"',
         f'width="{new_width}px" height="{new_height}px"',
         svg_content,
         count=1
     )
-    # -----------------------------
 
+    # 4. Обробка кліків (додаємо ID посиланням)
     is_linking = st.session_state.get('linking_mode') is not None
+    click_key = "graph_linking_mode" if is_linking else "graph_view_mode"
+
     if is_linking:
         svg_content = re.sub(r"id='([^']+)'", r"id='LINK_\1'", svg_content)
-        click_key = "graph_linking_mode"
-    else:
-        click_key = "graph_view_mode"
 
-    # Додаємо обгортку з прокруткою (overflow), щоб при великому зумі можна було скролити
-    st.markdown(
-        f"""
-        <div style="overflow: auto; border: 1px solid #444; border-radius: 5px; height: 600px; text-align: center;">
-            {svg_content.replace('<svg ', f'<svg id="{click_key}" ')} 
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    # ВАЖЛИВО: Видаляємо всі переноси рядків, щоб HTML не поламався у string
+    svg_content = svg_content.replace('\n', ' ').replace('\r', '')
 
-    # *Примітка: st_click_detector потребує чистого SVG або специфічної структури.
-    # Оскільки ми змінюємо HTML вручну для скролу, click_detector може не спрацювати стандартно.
-    # Тому використовуємо click_detector ТІЛЬКИ для генерації логіки,
-    # а рендеримо його всередині блоку з overflow.
+    # 5. Обгортка для скролу + Click Detector
+    # Використовуємо f-string обережно
+    html_content = f"""
+    <div style="width: 100%; height: 600px; overflow: auto; border: 1px solid #444; border-radius: 5px; background-color: #0e1117; display: flex; justify-content: center; align-items: flex-start;">
+        {svg_content}
+    </div>
+    """
 
-    # АЛЕ st_click_detector сам створює iframe. Тому правильний шлях для Streamlit:
-    # Просто передаємо збільшений SVG в click_detector, він сам зробить скроли, якщо контент великий.
-
-    clicked_id_raw = click_detector(svg_content, key=click_key)
+    # Виводимо через детектор
+    clicked_id_raw = click_detector(html_content, key=click_key)
 
     if clicked_id_raw and is_linking and clicked_id_raw.startswith("LINK_"):
         return clicked_id_raw.replace("LINK_", "")

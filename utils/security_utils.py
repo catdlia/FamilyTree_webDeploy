@@ -3,7 +3,7 @@ import time
 import streamlit as st
 from streamlit_authenticator import Authenticate
 
-SESSION_TIMEOUT_MINUTES = 30
+SESSION_TIMEOUT_MINUTES = 43200
 
 
 def check_session_timeout(authenticator: Authenticate):
