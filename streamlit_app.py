@@ -294,31 +294,22 @@ def render_sidebar(dm: DataManager, authenticator):
                 st.caption(f"{details} | {timestamp}")
                 st.markdown("---")
 
+# --- ТИМЧАСОВА ДІАГНОСТИКА (DEBUG) ---
     with st.sidebar.expander("🐞 Діагностика хмари", expanded=True):
         ps = get_persistence_service()
-        st.write(f"Enabled: {ps.is_enabled}")
-        st.write(f"Status: {ps.status}")
+        st.write(f"Підключено: {ps.is_enabled}")
+        st.write(f"Статус: {ps.status}")
         
-        # Перевіряємо ID папки
-        if ps.root_folder_id:
-            st.write(f"Root ID: `{ps.root_folder_id[:5]}...`")
-        else:
-            st.error("Root ID не знайдено в секретах!")
-
-        # Пробуємо знайти бекапи вручну і показати результат
-        if st.button("Test List Backups"):
-            if ps.service and ps.root_folder_id:
+        if st.button("Перевірити доступ до Диску"):
+            if ps.is_enabled:
                 try:
-                    q = f"'{ps.root_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-                    res = ps.service.files().list(q=q, fields="files(id, name)").execute()
-                    files = res.get('files', [])
-                    st.write(f"Знайдено папок: {len(files)}")
-                    for f in files:
-                        st.code(f"{f['name']} ({f['id']})")
+                    # Просте читання назви кореневої папки
+                    folder = ps.service.files().get(fileId=ps.root_folder_id).execute()
+                    st.success(f"Доступ є! Папка: {folder['name']}")
                 except Exception as e:
-                    st.error(f"API Error: {e}")
+                    st.error(f"Помилка доступу: {e}")
             else:
-                st.error("Сервіс не готовий")
+                st.error("Сервіс не ініціалізовано")
     
     return edit_mode
 
