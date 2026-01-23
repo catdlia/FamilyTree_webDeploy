@@ -41,13 +41,11 @@ class DataManager:
                 self.graph = nx.node_link_graph(data, edges="links")
 
                 # --- ЗАХИСТ ВІД БИТИХ ДАНИХ (ЦИКЛІВ) ---
-                # Якщо файл вже містить цикл, видаляємо його, щоб програма запустилася
                 try:
                     cycles = list(nx.simple_cycles(self.graph))
                     if cycles:
                         print(f"⚠️ Found cycles in saved graph: {cycles}. Fixing...")
                         for cycle in cycles:
-                            # Розриваємо цикл (видаляємо останнє ребро)
                             u, v = cycle[0], cycle[1]
                             if self.graph.has_edge(u, v):
                                 self.graph.remove_edge(u, v)
@@ -81,7 +79,6 @@ class DataManager:
 
         self.graph.add_node(person_id, label=name, documents=[], birth_date="", notes="")
 
-        # Створюємо папку для людини всередині папки користувача
         person_dir = os.path.join(self.project_directory, f"{person_id}_{name}")
         os.makedirs(person_dir, exist_ok=True)
 
@@ -220,33 +217,20 @@ class DataManager:
 
     def add_parent(self, child_id: str, parent_id: str, parent_type: str) -> bool:
         if not self.graph.has_node(child_id) or not self.graph.has_node(parent_id): return False
-
-        # --- ПЕРЕВІРКА НА ЦИКЛ ---
-        # Якщо вже існує шлях від батька до дитини, то додавання child->parent створить цикл
-        # Але тут ми додаємо ребро parent->child (REL_CHILD).
-        # Тому цикл виникне, якщо вже є шлях child->...->parent.
         if nx.has_path(self.graph, child_id, parent_id):
             raise ValueError(f"Неможливо додати: {parent_id} вже є нащадком {child_id}. Це створить цикл!")
-        # -------------------------
-
         self.graph.nodes[child_id][parent_type] = parent_id
         self.graph.add_edge(parent_id, child_id, type=REL_CHILD)
         return True
 
     def add_child(self, parent_id: str, child_id: str) -> bool:
         if not self.graph.has_node(parent_id) or not self.graph.has_node(child_id): return False
-
-        # --- ПЕРЕВІРКА НА ЦИКЛ ---
-        # Додаємо parent->child. Перевіряємо, чи є шлях child->parent.
         if nx.has_path(self.graph, child_id, parent_id):
-            raise ValueError(f"Неможливо додати: {parent_id} вже є нащадком {child_id}. Це створить цикл!")
-        # -------------------------
+             raise ValueError(f"Неможливо додати: {parent_id} вже є нащадком {child_id}. Це створить цикл!")
 
         child_data = self.graph.nodes[child_id]
-        if not child_data.get('father'):
-            child_data['father'] = parent_id
-        elif not child_data.get('mother'):
-            child_data['mother'] = parent_id
+        if not child_data.get('father'): child_data['father'] = parent_id
+        elif not child_data.get('mother'): child_data['mother'] = parent_id
         self.graph.add_edge(parent_id, child_id, type=REL_CHILD)
         return True
 
@@ -256,43 +240,39 @@ class DataManager:
         self.graph.add_edge(person2_id, person1_id, type=REL_PARTNER)
         return True
 
-        # ... (інші методи класу DataManager) ...
+    # --- МЕТОДИ ВИДАЛЕННЯ ---
+    def remove_parent(self, child_id: str, parent_id: str) -> bool:
+        """Видаляє зв'язок 'дитина -> батько'."""
+        if not self.graph.has_node(child_id) or not self.graph.has_node(parent_id): return False
 
-        def remove_parent(self, child_id: str, parent_id: str) -> bool:
-            """Видаляє зв'язок 'дитина -> батько'."""
-            if not self.graph.has_node(child_id) or not self.graph.has_node(parent_id): return False
+        if self.graph.has_edge(parent_id, child_id):
+            self.graph.remove_edge(parent_id, child_id)
 
-            # 1. Видаляємо ребро parent -> child (REL_CHILD)
-            if self.graph.has_edge(parent_id, child_id):
-                self.graph.remove_edge(parent_id, child_id)
+        node = self.graph.nodes[child_id]
+        if node.get('father') == parent_id: node['father'] = None
+        if node.get('mother') == parent_id: node['mother'] = None
 
-            # 2. Очищаємо атрибут у дитини
-            node = self.graph.nodes[child_id]
-            if node.get('father') == parent_id:
-                node['father'] = None
-            if node.get('mother') == parent_id:
-                node['mother'] = None
+        self.logger.log("UNLINK", f"Removed parent {parent_id} from {child_id}")
+        return True
 
-            self.logger.log("UNLINK", f"Removed parent {parent_id} from {child_id}")
-            return True
+    def remove_partner(self, p1: str, p2: str) -> bool:
+        """Видаляє зв'язок партнерства."""
+        removed = False
+        if self.graph.has_edge(p1, p2):
+            self.graph.remove_edge(p1, p2)
+            removed = True
+        if self.graph.has_edge(p2, p1):
+            self.graph.remove_edge(p2, p1)
+            removed = True
 
-        def remove_partner(self, p1: str, p2: str) -> bool:
-            """Видаляє зв'язок партнерства (в обидва боки)."""
-            removed = False
-            if self.graph.has_edge(p1, p2):
-                self.graph.remove_edge(p1, p2)
-                removed = True
-            if self.graph.has_edge(p2, p1):
-                self.graph.remove_edge(p2, p1)
-                removed = True
+        if removed:
+            self.logger.log("UNLINK", f"Unlinked partners {p1} and {p2}")
+        return removed
 
-            if removed:
-                self.logger.log("UNLINK", f"Unlinked partners {p1} and {p2}")
-            return removed
-
-        def remove_child(self, parent_id: str, child_id: str) -> bool:
-            """Видаляє зв'язок 'батько -> дитина' (це те саме, що remove_parent, але з іншого боку)."""
-            return self.remove_parent(child_id, parent_id)
+    def remove_child(self, parent_id: str, child_id: str) -> bool:
+        """Видаляє зв'язок 'батько -> дитина'."""
+        return self.remove_parent(child_id, parent_id)
+    # -----------------------
 
     def get_parents(self, person_id: str) -> tuple:
         if not self.graph.has_node(person_id): return (None, None)
@@ -319,23 +299,10 @@ class DataManager:
         adam = self.add_person("Adam")
         eve = self.add_person("Eve")
         cain = self.add_person("Cain")
-        abel = self.add_person("Abel")
-        seth = self.add_person("Seth")
-        enosh = self.add_person("Enosh")
         self.graph.add_edge(adam, eve, type=REL_PARTNER)
         self.graph.add_edge(eve, adam, type=REL_PARTNER)
         self.graph.nodes[cain]['father'] = adam
         self.graph.nodes[cain]['mother'] = eve
-        self.graph.nodes[abel]['father'] = adam
-        self.graph.nodes[abel]['mother'] = eve
-        self.graph.nodes[seth]['father'] = adam
-        self.graph.nodes[seth]['mother'] = eve
         self.graph.add_edge(adam, cain, type=REL_CHILD)
         self.graph.add_edge(eve, cain, type=REL_CHILD)
-        self.graph.add_edge(adam, abel, type=REL_CHILD)
-        self.graph.add_edge(eve, abel, type=REL_CHILD)
-        self.graph.add_edge(adam, seth, type=REL_CHILD)
-        self.graph.add_edge(eve, seth, type=REL_CHILD)
-        self.graph.nodes[enosh]['father'] = seth
-        self.graph.add_edge(seth, enosh, type=REL_CHILD)
         self.save_project()
