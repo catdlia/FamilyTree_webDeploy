@@ -458,34 +458,74 @@ def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
 
     # 2. ЗВ'ЯЗКИ
     with tabs[1]:
-        all_p = dm.get_all_people()
-        opts = {f"{l} ({i})": i for i, l in all_p if i != pid}
+        # --- ДОПОМІЖНА ФУНКЦІЯ ВІДОБРАЖЕННЯ РЯДКА ---
+        def render_rel_row(label, person_id, remove_callback, key_suffix):
+            """Малює рядок: Ім'я .... [Кнопка видалення]"""
+            if not person_id or not dm.graph.has_node(person_id): return
 
+            p_name = dm.graph.nodes[person_id]['label']
+
+            if is_editing:
+                c1, c2 = st.columns([4, 1])
+                with c1:
+                    st.write(f"{label} **{p_name}**")
+                with c2:
+                    # Кнопка видалення
+                    if st.button("🗑️", key=f"btn_rm_{key_suffix}_{person_id}_{pid}"):
+                        remove_callback()
+                        save_state(dm)
+            else:
+                st.write(f"{label} **{p_name}**")
+
+        # --- ОТРИМАННЯ ДАНИХ ---
         parents = dm.get_parents(pid)
         partners = dm.get_partners(pid)
         children = dm.get_children(pid)
 
         st.write("#### 👨‍👩‍👧‍👦 Родина")
-        if parents[0]: st.write(f"👴 **Батько:** {dm.graph.nodes[parents[0]]['label']}")
-        if parents[1]: st.write(f"👵 **Мати:** {dm.graph.nodes[parents[1]]['label']}")
-        if partners: st.write(f"❤️ **Партнери:** {', '.join([dm.graph.nodes[p]['label'] for p in partners])}")
-        if children: st.write(f"👶 **Діти:** {', '.join([dm.graph.nodes[c]['label'] for c in children])}")
 
+        # 1. БАТЬКИ
+        if parents[0]:
+            render_rel_row("👴 Батько:", parents[0], lambda: dm.remove_parent(pid, parents[0]), "father")
+
+        if parents[1]:
+            render_rel_row("👵 Мати:", parents[1], lambda: dm.remove_parent(pid, parents[1]), "mother")
+
+        # 2. ПАРТНЕРИ
+        if partners:
+            st.markdown("**❤️ Партнери:**")
+            for p_id in partners:
+                render_rel_row("— ", p_id, lambda p=p_id: dm.remove_partner(pid, p), "partner")
+
+        # 3. ДІТИ
+        if children:
+            st.markdown("**👶 Діти:**")
+            for c_id in children:
+                render_rel_row("— ", c_id, lambda c=c_id: dm.remove_child(pid, c), "child")
+
+        # --- БЛОК ДОДАВАННЯ (залишається як був) ---
         if is_editing:
             st.divider()
             st.write("#### ➕ Змінити зв'язки")
+
+            all_p = dm.get_all_people()
+            opts = {f"{l} ({i})": i for i, l in all_p if i != pid}
 
             # --- БАТЬКИ ---
             st.markdown("##### Батьки")
             col1, col2 = st.columns([2, 1])
             with col1:
-                p_sel = st.selectbox("Оберіть зі списку", ["--"]+list(opts.keys()), key="p_parent_sel")
+                p_sel = st.selectbox("Оберіть зі списку", ["--"] + list(opts.keys()), key="p_parent_sel")
                 role_dict = {"Батько": "father", "Мати": "mother"}
                 role_ua = st.radio("Роль", ["Батько", "Мати"], horizontal=True, key="p_role_sel")
                 if st.button("Додати", key="btn_add_parent_list"):
                     if p_sel != "--":
-                        dm.add_parent(pid, opts[p_sel], role_dict[role_ua])
-                        save_state(dm)
+                        try:
+                            dm.add_parent(pid, opts[p_sel], role_dict[role_ua])
+                            save_state(dm)
+                        except ValueError as e:
+                            st.error(str(e))
+
             with col2:
                 st.write("")
                 st.write("")
@@ -497,7 +537,7 @@ def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
             st.markdown("##### Партнери")
             col1, col2 = st.columns([2, 1])
             with col1:
-                pt_sel = st.selectbox("Оберіть зі списку", ["--"]+list(opts.keys()), key="p_partner_sel")
+                pt_sel = st.selectbox("Оберіть зі списку", ["--"] + list(opts.keys()), key="p_partner_sel")
                 if st.button("Додати", key="btn_add_partner_list"):
                     if pt_sel != "--":
                         dm.add_partner(pid, opts[pt_sel])
@@ -512,11 +552,14 @@ def render_edit_panel(dm: DataManager, pid: str, is_editing: bool):
             st.markdown("##### Діти")
             col1, col2 = st.columns([2, 1])
             with col1:
-                ch_sel = st.selectbox("Оберіть зі списку", ["--"]+list(opts.keys()), key="p_child_sel")
+                ch_sel = st.selectbox("Оберіть зі списку", ["--"] + list(opts.keys()), key="p_child_sel")
                 if st.button("Додати", key="btn_add_child_list"):
                     if ch_sel != "--":
-                        dm.add_child(pid, opts[ch_sel])
-                        save_state(dm)
+                        try:
+                            dm.add_child(pid, opts[ch_sel])
+                            save_state(dm)
+                        except ValueError as e:
+                            st.error(str(e))
             with col2:
                 st.write("")
                 if st.button("🎯 Обрати на графі", key="btn_link_child"):

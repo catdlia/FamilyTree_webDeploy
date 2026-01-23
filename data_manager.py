@@ -256,6 +256,42 @@ class DataManager:
         self.graph.add_edge(person2_id, person1_id, type=REL_PARTNER)
         return True
 
+    def remove_parent(self, child_id: str, parent_id: str) -> bool:
+        """Видаляє зв'язок 'дитина -> батько'."""
+        if not self.graph.has_node(child_id) or not self.graph.has_node(parent_id): return False
+
+        # 1. Видаляємо ребро parent -> child (REL_CHILD)
+        if self.graph.has_edge(parent_id, child_id):
+            self.graph.remove_edge(parent_id, child_id)
+
+        # 2. Очищаємо атрибут у дитини
+        node = self.graph.nodes[child_id]
+        if node.get('father') == parent_id:
+            node['father'] = None
+        if node.get('mother') == parent_id:
+            node['mother'] = None
+
+        self.logger.log("UNLINK", f"Removed parent {parent_id} from {child_id}")
+        return True
+
+    def remove_partner(self, p1: str, p2: str) -> bool:
+        """Видаляє зв'язок партнерства (в обидва боки)."""
+        removed = False
+        if self.graph.has_edge(p1, p2):
+            self.graph.remove_edge(p1, p2)
+            removed = True
+        if self.graph.has_edge(p2, p1):
+            self.graph.remove_edge(p2, p1)
+            removed = True
+
+        if removed:
+            self.logger.log("UNLINK", f"Unlinked partners {p1} and {p2}")
+        return removed
+
+    def remove_child(self, parent_id: str, child_id: str) -> bool:
+        """Видаляє зв'язок 'батько -> дитина' (це те саме, що remove_parent, але з іншого боку)."""
+        return self.remove_parent(child_id, parent_id)
+
     def get_parents(self, person_id: str) -> tuple:
         if not self.graph.has_node(person_id): return (None, None)
         data = self.graph.nodes[person_id]
