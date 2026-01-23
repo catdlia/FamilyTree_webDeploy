@@ -30,11 +30,17 @@ class SVGRenderer:
         xs = [pos[0] for pos in positions.values()]
         ys = [pos[1] for pos in positions.values()]
 
+        # ДОДАЄМО ВІДСТУПИ (PADDING), щоб граф не лип до країв
+        padding = 100
+
         if xs and ys:
-            self.min_x = min(xs) - NODE_WIDTH
-            self.min_y = min(ys) - NODE_HEIGHT
-            self.width = max(xs) - self.min_x + NODE_WIDTH
-            self.height = max(ys) - self.min_y + NODE_HEIGHT
+            # Розширюємо межі з усіх боків
+            self.min_x = min(xs) - NODE_WIDTH - padding
+            self.min_y = min(ys) - NODE_HEIGHT - padding
+
+            # Ширина = реальна ширина контенту + подвійний паддінг
+            self.width = (max(xs) - min(xs)) + NODE_WIDTH + (padding * 3)
+            self.height = (max(ys) - min(ys)) + NODE_HEIGHT + (padding * 2)
         else:
             self.min_x, self.min_y, self.width, self.height = 0, 0, 800, 600
 
